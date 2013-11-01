@@ -57,7 +57,7 @@ function is_git_clone_repo {
 function update_git_repo {
   remote_url=$("$GIT" config --get remote.origin.url)
   if [ -n "$remote_url" -a "$remote_url" != "$CANONICAL_GIT_URL" ]; then
-    echo "Your copy of depot_tools is configured to fetch from an obsolete URL:"
+    echo "Your copy of depends is configured to fetch from an obsolete URL:"
     echo
     echo "  $remote_url"
     echo
@@ -78,7 +78,7 @@ function update_git_repo {
     REBASE_TXT=$(git rebase -q origin/master 2>&1)
     STATUS=$?
     if [[ $STATUS -ne 0 ]]; then
-      echo "depot_tools update failed. Conflict in $base_dir" >&2
+      echo "dependss update failed. Conflict in $base_dir" >&2
       echo "$REBASE_TXT" >&2
       git rebase --abort 2> /dev/null
     fi
@@ -111,7 +111,7 @@ fi
 # We're on POSIX. We can now safely look for svn checkout.
 if [ "X$DEPOT_TOOLS_UPDATE" != "X0" -a -e "$base_dir/.svn" ]
 then
-  # Update the root directory to stay up-to-date with the latest depot_tools.
+  # Update the root directory to stay up-to-date with the latest depends.
   BEFORE_REVISION=$(get_svn_revision)
   "$SVN" -q up "$base_dir"
   AFTER_REVISION=$(get_svn_revision)
