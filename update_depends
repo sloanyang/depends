@@ -73,7 +73,7 @@ function update_git_repo {
   fi
 
   if is_git_clone_repo; then
-    git fetch -f -q origin &> /dev/null		#Force to ignore the changes! BAD idea
+    git fetch -q origin &> /dev/null		
     local REBASE_TXT STATUS
     REBASE_TXT=$(git rebase -q origin/master 2>&1)
     STATUS=$?
