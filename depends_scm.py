@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 
-import gclient_utils
+import depends_utils
 import scm
 import subprocess2
 
@@ -74,8 +74,8 @@ class GitDiffFilterer(DiffFiltererWrapper):
 
 def ask_for_data(prompt, options):
   if options.jobs > 1:
-    raise gclient_utils.Error("Background task requires input. Rerun "
-                              "gclient with --jobs=1 so that\n"
+    raise depends_utils.Error("Background task requires input. Rerun "
+                              "depends with --jobs=1 so that\n"
                               "interaction is possible.")
   try:
     return raw_input(prompt)
@@ -90,7 +90,7 @@ def ask_for_data(prompt, options):
 
 def GetScmName(url):
   if url:
-    url, _ = gclient_utils.SplitUrlRevision(url)
+    url, _ = depends_utils.SplitUrlRevision(url)
     if (url.startswith('git://') or url.startswith('ssh://') or
         url.startswith('git+http://') or url.startswith('git+https://') or
         url.endswith('.git')):
@@ -109,10 +109,10 @@ def CreateSCM(url, root_dir=None, relpath=None):
 
   scm_name = GetScmName(url)
   if not scm_name in SCM_MAP:
-    raise gclient_utils.Error('No SCM found for url %s' % url)
+    raise depends_utils.Error('No SCM found for url %s' % url)
   scm_class = SCM_MAP[scm_name]
   if not scm_class.BinaryExists():
-    raise gclient_utils.Error('%s command not found' % scm_name)
+    raise depends_utils.Error('%s command not found' % scm_name)
   return scm_class(url, root_dir, relpath)
 
 
@@ -139,10 +139,10 @@ class SCMWrapper(object):
                 'revinfo', 'status', 'diff', 'pack', 'runhooks']
 
     if not command in commands:
-      raise gclient_utils.Error('Unknown command %s' % command)
+      raise depends_utils.Error('Unknown command %s' % command)
 
     if not command in dir(self):
-      raise gclient_utils.Error('Command %s not implemented in %s wrapper' % (
+      raise depends_utils.Error('Command %s not implemented in %s wrapper' % (
           command, self.__class__.__name__))
 
     return getattr(self, command)(options, args, file_list)
@@ -207,7 +207,7 @@ class GitWrapper(SCMWrapper):
       # We assume git is newer than 1.7.  See: crbug.com/114483
       result, version = scm.GIT.AssertVersion('1.7')
       if not result:
-        raise gclient_utils.Error('Git version is older than 1.7: %s' % version)
+        raise depends_utils.Error('Git version is older than 1.7: %s' % version)
       return result
     except OSError:
       return False
@@ -241,7 +241,7 @@ class GitWrapper(SCMWrapper):
     its upstream branch.
     """
     merge_base = self._Capture(['merge-base', 'HEAD', 'origin'])
-    gclient_utils.CheckCallAndFilter(
+    depends_utils.CheckCallAndFilter(
         ['git', 'diff', merge_base],
         cwd=self.checkout_path,
         filter_fn=GitDiffFilterer(self.relpath).Filter)
@@ -259,18 +259,18 @@ class GitWrapper(SCMWrapper):
               'print_stdout': False,
               'filter_fn': lambda x: None}
     try:
-      gclient_utils.CheckCallAndFilter(cmd, **kwargs)
-      gclient_utils.CheckCallAndFilter(cmd2, **kwargs)
+      depends_utils.CheckCallAndFilter(cmd, **kwargs)
+      depends_utils.CheckCallAndFilter(cmd2, **kwargs)
     except subprocess2.CalledProcessError:
       # Not a fatal error, or even very interesting in a non-git-submodule
       # world.  So just keep it quiet.
       pass
     try:
-      gclient_utils.CheckCallAndFilter(cmd3, **kwargs)
+      depends_utils.CheckCallAndFilter(cmd3, **kwargs)
     except subprocess2.CalledProcessError:
-      gclient_utils.CheckCallAndFilter(cmd3 + ['always'], **kwargs)
+      depends_utils.CheckCallAndFilter(cmd3 + ['always'], **kwargs)
 
-    gclient_utils.CheckCallAndFilter(cmd4, **kwargs)
+    depends_utils.CheckCallAndFilter(cmd4, **kwargs)
 
   def _FetchAndReset(self, revision, file_list, options):
     """Equivalent to git fetch; git reset."""
@@ -297,12 +297,12 @@ class GitWrapper(SCMWrapper):
       Error: if can't get URL for relative path.
     """
     if args:
-      raise gclient_utils.Error("Unsupported argument(s): %s" % ",".join(args))
+      raise depends_utils.Error("Unsupported argument(s): %s" % ",".join(args))
 
     self._CheckMinVersion("1.6.6")
 
     default_rev = "refs/heads/master"
-    url, deps_revision = gclient_utils.SplitUrlRevision(self.url)
+    url, deps_revision = depends_utils.SplitUrlRevision(self.url)
     rev_str = ""
     revision = deps_revision
     managed = True
@@ -315,7 +315,7 @@ class GitWrapper(SCMWrapper):
     if not revision:
       revision = default_rev
 
-    if gclient_utils.IsDateRevision(revision):
+    if depends_utils.IsDateRevision(revision):
       # Date-revisions only work on git-repositories if the reflog hasn't
       # expired yet. Use rev-list to get the corresponding revision.
       #  git rev-list -n 1 --before='time-stamp' branchname
@@ -366,11 +366,11 @@ class GitWrapper(SCMWrapper):
       return self._Capture(['rev-parse', '--verify', 'HEAD'])
 
     if not os.path.exists(os.path.join(self.checkout_path, '.git')):
-      raise gclient_utils.Error('\n____ %s%s\n'
+      raise depends_utils.Error('\n____ %s%s\n'
                                 '\tPath is not a git repo. No .git dir.\n'
                                 '\tTo resolve:\n'
                                 '\t\trm -rf %s\n'
-                                '\tAnd run gclient sync again\n'
+                                '\tAnd run depends sync again\n'
                                 % (self.relpath, rev_str, self.relpath))
 
     # See if the url has changed (the unittests use git://foo for the url, let
@@ -379,13 +379,13 @@ class GitWrapper(SCMWrapper):
     return_early = False
     # TODO(maruel): Delete url != 'git://foo' since it's just to make the
     # unit test pass. (and update the comment above)
-    # Skip url auto-correction if remote.origin.gclient-auto-fix-url is set.
+    # Skip url auto-correction if remote.origin.depends-auto-fix-url is set.
     # This allows devs to use experimental repos which have a different url
     # but whose branch(s) are the same as official repos.
     if (current_url != url and
         url != 'git://foo' and
         subprocess2.capture(
-            ['git', 'config', 'remote.origin.gclient-auto-fix-url'],
+            ['git', 'config', 'remote.origin.depends-auto-fix-url'],
             cwd=self.checkout_path).strip() != 'False'):
       print('_____ switching %s to a new upstream' % self.relpath)
       # Make sure it's clean
@@ -437,7 +437,7 @@ class GitWrapper(SCMWrapper):
       elif upstream_branch.startswith('refs/remotes'):
         current_type = "branch"
       else:
-        raise gclient_utils.Error('Invalid Upstream: %s' % upstream_branch)
+        raise depends_utils.Error('Invalid Upstream: %s' % upstream_branch)
 
     if not scm.GIT.IsValidRevision(self.checkout_path, revision, sha_only=True):
       # Update the remotes first so we have all the refs.
@@ -494,7 +494,7 @@ class GitWrapper(SCMWrapper):
                      "Please merge or rebase manually:\n" +
                      "cd %s; git rebase %s\n" % (self.checkout_path, new_base) +
                      "OR git checkout -b <some new branch> %s" % new_base)
-      raise gclient_utils.Error(switch_error)
+      raise depends_utils.Error(switch_error)
     else:
       # case 3 - the default case
       if files is not None:
@@ -518,14 +518,14 @@ class GitWrapper(SCMWrapper):
                   'Cannot fast-forward merge, attempt to rebase? '
                   '(y)es / (q)uit / (s)kip : ', options)
             except ValueError:
-              raise gclient_utils.Error('Invalid Character')
+              raise depends_utils.Error('Invalid Character')
             if re.match(r'yes|y', action, re.I):
               self._AttemptRebase(upstream_branch, files, options,
                                   printed_path=printed_path)
               printed_path = True
               break
             elif re.match(r'quit|q', action, re.I):
-              raise gclient_utils.Error("Can't fast-forward, please merge or "
+              raise depends_utils.Error("Can't fast-forward, please merge or "
                                         "rebase manually.\n"
                                         "cd %s && git " % self.checkout_path
                                         + "rebase %s" % upstream_branch)
@@ -541,7 +541,7 @@ class GitWrapper(SCMWrapper):
           if not printed_path:
             print('\n_____ %s%s' % (self.relpath, rev_str))
             printed_path = True
-          raise gclient_utils.Error(e.stderr)
+          raise depends_utils.Error(e.stderr)
         else:
           # Some other problem happened with the merge
           logging.error("Error during fast-forward merge in %s!" % self.relpath)
@@ -565,9 +565,9 @@ class GitWrapper(SCMWrapper):
 
     # If the rebase generated a conflict, abort and ask user to fix
     if self._IsRebasing():
-      raise gclient_utils.Error('\n____ %s%s\n'
+      raise depends_utils.Error('\n____ %s%s\n'
                                 '\nConflict while rebasing this branch.\n'
-                                'Fix the conflict and run gclient again.\n'
+                                'Fix the conflict and run depends again.\n'
                                 'See man git-rebase for details.\n'
                                 % (self.relpath, rev_str))
 
@@ -587,7 +587,7 @@ class GitWrapper(SCMWrapper):
         full_path = os.path.join(self.checkout_path, path)
         if not os.path.islink(full_path):
           print('\n_____ removing unversioned directory %s' % path)
-          gclient_utils.rmtree(full_path)
+          depends_utils.rmtree(full_path)
 
     return self._Capture(['rev-parse', '--verify', 'HEAD'])
 
@@ -609,7 +609,7 @@ class GitWrapper(SCMWrapper):
       if self._GetCurrentBranch():
         upstream_branch = scm.GIT.GetUpstreamBranch(self.checkout_path)
         default_rev = upstream_branch or default_rev
-    _, deps_revision = gclient_utils.SplitUrlRevision(self.url)
+    _, deps_revision = depends_utils.SplitUrlRevision(self.url)
     if not deps_revision:
       deps_revision = default_rev
     if deps_revision.startswith('refs/heads/'):
@@ -650,7 +650,7 @@ class GitWrapper(SCMWrapper):
     will be called on the source."""
     sha1 = None
     if not os.path.isdir(self.checkout_path):
-      raise gclient_utils.Error(
+      raise depends_utils.Error(
           ( 'We could not find a valid hash for safesync_url response "%s".\n'
             'Safesync URLs with a git checkout currently require the repo to\n'
             'be cloned without a safesync_url before adding the safesync_url.\n'
@@ -677,14 +677,14 @@ class GitWrapper(SCMWrapper):
         try:
           sha1 = scm.GIT.GetBlessedSha1ForSvnRev(
               cwd=self.checkout_path, rev=rev)
-        except gclient_utils.Error, e:
+        except depends_utils.Error, e:
           sha1 = e.message
           print('\nWarning: Could not find a git revision with accurate\n'
                  '.DEPS.git that maps to SVN revision %s.  Sync-ing to\n'
                  'the closest sane git revision, which is:\n'
                  '  %s\n' % (rev, e.message))
         if not sha1:
-          raise gclient_utils.Error(
+          raise depends_utils.Error(
               ( 'It appears that either your git-svn remote is incorrectly\n'
                 'configured or the revision in your safesync_url is\n'
                 'higher than git-svn remote\'s HEAD as we couldn\'t find a\n'
@@ -700,7 +700,7 @@ class GitWrapper(SCMWrapper):
           sha1 = rev
 
     if not sha1:
-      raise gclient_utils.Error(
+      raise depends_utils.Error(
           ( 'We could not find a valid hash for safesync_url response "%s".\n'
             'Safesync URLs with a git checkout currently require a git-svn\n'
             'remote or a safesync_url that provides git sha1s. Please add a\n'
@@ -791,9 +791,9 @@ class GitWrapper(SCMWrapper):
     v = ['-v'] if options.verbose else []
     filter_fn = lambda l: '[up to date]' not in l
     with self.cache_locks[folder]:
-      gclient_utils.safe_makedirs(self.cache_dir)
+      depends_utils.safe_makedirs(self.cache_dir)
       if not os.path.exists(os.path.join(folder, 'config')):
-        gclient_utils.rmtree(folder)
+        depends_utils.rmtree(folder)
         cmd = ['clone'] + v + ['-c', 'core.deltaBaseCacheLimit=2g',
                                '--progress', '--mirror']
 
@@ -851,20 +851,20 @@ class GitWrapper(SCMWrapper):
     # If the parent directory does not exist, Git clone on Windows will not
     # create it, so we need to do it manually.
     parent_dir = os.path.dirname(self.checkout_path)
-    gclient_utils.safe_makedirs(parent_dir)
+    depends_utils.safe_makedirs(parent_dir)
     tmp_dir = tempfile.mkdtemp(
-        prefix='_gclient_%s_' % os.path.basename(self.checkout_path),
+        prefix='_depends_%s_' % os.path.basename(self.checkout_path),
         dir=parent_dir)
     try:
       clone_cmd.append(tmp_dir)
       self._Run(clone_cmd, options, cwd=self._root_dir, retry=True)
-      gclient_utils.safe_makedirs(self.checkout_path)
-      gclient_utils.safe_rename(os.path.join(tmp_dir, '.git'),
+      depends_utils.safe_makedirs(self.checkout_path)
+      depends_utils.safe_rename(os.path.join(tmp_dir, '.git'),
                                 os.path.join(self.checkout_path, '.git'))
     finally:
       if os.listdir(tmp_dir):
         print('\n_____ removing non-empty tmp dir %s' % tmp_dir)
-      gclient_utils.rmtree(tmp_dir)
+      depends_utils.rmtree(tmp_dir)
     if revision.startswith('refs/heads/'):
       self._Run(
           ['checkout', '--quiet', revision.replace('refs/heads/', '')], options)
@@ -921,23 +921,23 @@ class GitWrapper(SCMWrapper):
             rebase_output = scm.GIT.Capture(rebase_cmd, cwd=self.checkout_path)
             break
           elif re.match(r'quit|q', rebase_action, re.I):
-            raise gclient_utils.Error("Please merge or rebase manually\n"
+            raise depends_utils.Error("Please merge or rebase manually\n"
                                       "cd %s && git " % self.checkout_path
                                       + "%s" % ' '.join(rebase_cmd))
           elif re.match(r'show|s', rebase_action, re.I):
             print('\n%s' % e.stderr.strip())
             continue
           else:
-            gclient_utils.Error("Input not recognized")
+            depends_utils.Error("Input not recognized")
             continue
       elif re.search(r'^CONFLICT', e.stdout, re.M):
-        raise gclient_utils.Error("Conflict while rebasing this branch.\n"
-                                  "Fix the conflict and run gclient again.\n"
+        raise depends_utils.Error("Conflict while rebasing this branch.\n"
+                                  "Fix the conflict and run depends again.\n"
                                   "See 'man git-rebase' for details.\n")
       else:
         print(e.stdout.strip())
         print('Rebase produced error output:\n%s' % e.stderr.strip())
-        raise gclient_utils.Error("Unrecognized error, please merge or rebase "
+        raise depends_utils.Error("Unrecognized error, please merge or rebase "
                                   "manually.\ncd %s && git " %
                                   self.checkout_path
                                   + "%s" % ' '.join(rebase_cmd))
@@ -952,7 +952,7 @@ class GitWrapper(SCMWrapper):
   def _CheckMinVersion(min_version):
     (ok, current_version) = scm.GIT.AssertVersion(min_version)
     if not ok:
-      raise gclient_utils.Error('git version %s < minimum required %s' %
+      raise depends_utils.Error('git version %s < minimum required %s' %
                                 (current_version, min_version))
 
   def _IsRebasing(self):
@@ -970,7 +970,7 @@ class GitWrapper(SCMWrapper):
       scm.GIT.Capture(['update-index', '--ignore-submodules', '--refresh'],
                       cwd=self.checkout_path)
     except subprocess2.CalledProcessError:
-      raise gclient_utils.Error('\n____ %s%s\n'
+      raise depends_utils.Error('\n____ %s%s\n'
                                 '\tYou have unstaged changes.\n'
                                 '\tPlease commit, stash, or reset.\n'
                                   % (self.relpath, rev_str))
@@ -979,7 +979,7 @@ class GitWrapper(SCMWrapper):
                        '--ignore-submodules', 'HEAD', '--'],
                        cwd=self.checkout_path)
     except subprocess2.CalledProcessError:
-      raise gclient_utils.Error('\n____ %s%s\n'
+      raise depends_utils.Error('\n____ %s%s\n'
                                 '\tYour index contains uncommitted changes\n'
                                 '\tPlease commit, stash, or reset.\n'
                                   % (self.relpath, rev_str))
@@ -995,14 +995,14 @@ class GitWrapper(SCMWrapper):
       # Commit is not contained by any rev. See if the user is rebasing:
       if self._IsRebasing():
         # Punt to the user
-        raise gclient_utils.Error('\n____ %s%s\n'
+        raise depends_utils.Error('\n____ %s%s\n'
                                   '\tAlready in a conflict, i.e. (no branch).\n'
-                                  '\tFix the conflict and run gclient again.\n'
+                                  '\tFix the conflict and run depends again.\n'
                                   '\tOr to abort run:\n\t\tgit-rebase --abort\n'
                                   '\tSee man git-rebase for details.\n'
                                    % (self.relpath, rev_str))
       # Let's just save off the commit so we can proceed.
-      name = ('saved-by-gclient-' +
+      name = ('saved-by-depends-' +
               self._Capture(['rev-parse', '--short', 'HEAD']))
       self._Capture(['branch', '-f', name])
       print('\n_____ found an unreferenced commit and saved it as \'%s\'' %
@@ -1043,11 +1043,11 @@ class GitWrapper(SCMWrapper):
       # Don't prompt for passwords; just fail quickly and noisily.
       # By default, git will use an interactive terminal prompt when a username/
       # password is needed.  That shouldn't happen in the chromium workflow,
-      # and if it does, then gclient may hide the prompt in the midst of a flood
+      # and if it does, then depends may hide the prompt in the midst of a flood
       # of terminal spew.  The only indication that something has gone wrong
-      # will be when gclient hangs unresponsively.  Instead, we disable the
+      # will be when depends hangs unresponsively.  Instead, we disable the
       # password prompt and simply allow git to fail noisily.  The error
-      # message produced by git will be copied to gclient's output.
+      # message produced by git will be copied to depends's output.
       env = kwargs.get('env') or kwargs.setdefault('env', os.environ.copy())
       env.setdefault('GIT_ASKPASS', 'true')
       env.setdefault('SSH_ASKPASS', 'true')
@@ -1056,7 +1056,7 @@ class GitWrapper(SCMWrapper):
     stdout = kwargs.get('stdout', sys.stdout)
     stdout.write('\n________ running \'git %s\' in \'%s\'\n' % (
                  ' '.join(args), kwargs['cwd']))
-    gclient_utils.CheckCallAndFilter(['git'] + args, **kwargs)
+    depends_utils.CheckCallAndFilter(['git'] + args, **kwargs)
 
 
 class SVNWrapper(SCMWrapper):
@@ -1069,7 +1069,7 @@ class SVNWrapper(SCMWrapper):
     try:
       result, version = scm.SVN.AssertVersion('1.4')
       if not result:
-        raise gclient_utils.Error('SVN version is older than 1.4: %s' % version)
+        raise depends_utils.Error('SVN version is older than 1.4: %s' % version)
       return result
     except OSError:
       return False
@@ -1092,7 +1092,7 @@ class SVNWrapper(SCMWrapper):
   def diff(self, options, args, _file_list):
     # NOTE: This function does not currently modify file_list.
     if not os.path.isdir(self.checkout_path):
-      raise gclient_utils.Error('Directory %s is not present.' %
+      raise depends_utils.Error('Directory %s is not present.' %
           self.checkout_path)
     self._Run(['diff'] + args, options)
 
@@ -1100,9 +1100,9 @@ class SVNWrapper(SCMWrapper):
     """Generates a patch file which can be applied to the root of the
     repository."""
     if not os.path.isdir(self.checkout_path):
-      raise gclient_utils.Error('Directory %s is not present.' %
+      raise depends_utils.Error('Directory %s is not present.' %
           self.checkout_path)
-    gclient_utils.CheckCallAndFilter(
+    depends_utils.CheckCallAndFilter(
         ['svn', 'diff', '-x', '--ignore-eol-style'] + args,
         cwd=self.checkout_path,
         print_stdout=False,
@@ -1128,11 +1128,11 @@ class SVNWrapper(SCMWrapper):
       return
 
     if args:
-      raise gclient_utils.Error("Unsupported argument(s): %s" % ",".join(args))
+      raise depends_utils.Error("Unsupported argument(s): %s" % ",".join(args))
 
     # revision is the revision to match. It is None if no revision is specified,
     # i.e. the 'deps ain't pinned'.
-    url, revision = gclient_utils.SplitUrlRevision(self.url)
+    url, revision = depends_utils.SplitUrlRevision(self.url)
     # Keep the original unpinned url for reference in case the repo is switched.
     base_url = url
     managed = True
@@ -1158,18 +1158,18 @@ class SVNWrapper(SCMWrapper):
       try:
         from_info = scm.SVN.CaptureLocalInfo(
             [], os.path.join(self.checkout_path, '.'))
-      except (gclient_utils.Error, subprocess2.CalledProcessError):
+      except (depends_utils.Error, subprocess2.CalledProcessError):
         if options.reset and options.delete_unversioned_trees:
           print 'Removing troublesome path %s' % self.checkout_path
-          gclient_utils.rmtree(self.checkout_path)
+          depends_utils.rmtree(self.checkout_path)
           exists = False
         else:
           msg = ('Can\'t update/checkout %s if an unversioned directory is '
                  'present. Delete the directory and try again.')
-          raise gclient_utils.Error(msg % self.checkout_path)
+          raise depends_utils.Error(msg % self.checkout_path)
 
     if not exists:
-      gclient_utils.safe_makedirs(os.path.dirname(self.checkout_path))
+      depends_utils.safe_makedirs(os.path.dirname(self.checkout_path))
       # We need to checkout.
       command = ['checkout', url, self.checkout_path]
       command = self._AddAdditionalUpdateFlags(command, options, revision)
@@ -1181,8 +1181,8 @@ class SVNWrapper(SCMWrapper):
       return self.Svnversion()
 
     if 'URL' not in from_info:
-      raise gclient_utils.Error(
-          ('gclient is confused. Couldn\'t get the url for %s.\n'
+      raise depends_utils.Error(
+          ('depends is confused. Couldn\'t get the url for %s.\n'
            'Try using @unmanaged.\n%s') % (
             self.checkout_path, from_info))
 
@@ -1208,7 +1208,7 @@ class SVNWrapper(SCMWrapper):
               path_to_remove = os.path.normpath(
                   os.path.join(self.checkout_path, d[1]))
               print 'Removing troublesome path %s' % path_to_remove
-              gclient_utils.rmtree(path_to_remove)
+              depends_utils.rmtree(path_to_remove)
             else:
               print 'Not removing troublesome path %s automatically.' % d[1]
               if d[0][0] == '!':
@@ -1225,10 +1225,10 @@ class SVNWrapper(SCMWrapper):
       # The repository url changed, need to switch.
       try:
         to_info = scm.SVN.CaptureRemoteInfo(url)
-      except (gclient_utils.Error, subprocess2.CalledProcessError):
+      except (depends_utils.Error, subprocess2.CalledProcessError):
         # The url is invalid or the server is not accessible, it's safer to bail
         # out right now.
-        raise gclient_utils.Error('This url is unreachable: %s' % url)
+        raise depends_utils.Error('This url is unreachable: %s' % url)
       can_switch = ((from_info['Repository Root'] != to_info['Repository Root'])
                     and (from_info['UUID'] == to_info['UUID']))
       if can_switch:
@@ -1255,13 +1255,13 @@ class SVNWrapper(SCMWrapper):
           # Look for local modifications but ignore unversioned files.
           for status in scm.SVN.CaptureStatus(None, self.checkout_path):
             if status[0][0] != '?':
-              raise gclient_utils.Error(
+              raise depends_utils.Error(
                   ('Can\'t switch the checkout to %s; UUID don\'t match and '
                    'there is local changes in %s. Delete the directory and '
                    'try again.') % (url, self.checkout_path))
         # Ok delete it.
         print('\n_____ switching %s to a new checkout' % self.relpath)
-        gclient_utils.rmtree(self.checkout_path)
+        depends_utils.rmtree(self.checkout_path)
         # We need to checkout.
         command = ['checkout', url, self.checkout_path]
         command = self._AddAdditionalUpdateFlags(command, options, revision)
@@ -1287,7 +1287,7 @@ class SVNWrapper(SCMWrapper):
             and os.path.isdir(full_path)
             and not os.path.islink(full_path)):
           print('\n_____ removing unversioned directory %s' % status[1])
-          gclient_utils.rmtree(full_path)
+          depends_utils.rmtree(full_path)
     return self.Svnversion()
 
   def updatesingle(self, options, args, file_list):
@@ -1311,7 +1311,7 @@ class SVNWrapper(SCMWrapper):
       # information is not stored next to the file, so we will have to
       # re-export the file every time we sync.
       if not os.path.exists(self.checkout_path):
-        gclient_utils.safe_makedirs(self.checkout_path)
+        depends_utils.safe_makedirs(self.checkout_path)
       command = ["export", os.path.join(self.url, filename),
                  os.path.join(self.checkout_path, filename)]
       command = self._AddAdditionalUpdateFlags(command, options,
@@ -1326,7 +1326,7 @@ class SVNWrapper(SCMWrapper):
     """
     if not os.path.isdir(self.checkout_path):
       if os.path.exists(self.checkout_path):
-        gclient_utils.rmtree(self.checkout_path)
+        depends_utils.rmtree(self.checkout_path)
       # svn revert won't work if the directory doesn't exist. It needs to
       # checkout instead.
       print('\n_____ %s is missing, synching instead' % self.relpath)
@@ -1341,11 +1341,11 @@ class SVNWrapper(SCMWrapper):
         print('________ found .hg directory; skipping %s' % self.relpath)
         return
       if not options.force:
-        raise gclient_utils.Error('Invalid checkout path, aborting')
+        raise depends_utils.Error('Invalid checkout path, aborting')
       print(
           '\n_____ %s is not a valid svn checkout, synching instead' %
           self.relpath)
-      gclient_utils.rmtree(self.checkout_path)
+      depends_utils.rmtree(self.checkout_path)
       # Don't reuse the args.
       return self.update(options, [], file_list)
 
@@ -1377,7 +1377,7 @@ class SVNWrapper(SCMWrapper):
     """Display revision"""
     try:
       return scm.SVN.CaptureRevision(self.checkout_path)
-    except (gclient_utils.Error, subprocess2.CalledProcessError):
+    except (depends_utils.Error, subprocess2.CalledProcessError):
       return None
 
   def runhooks(self, options, args, file_list):
@@ -1398,7 +1398,7 @@ class SVNWrapper(SCMWrapper):
   def GetUsableRev(self, rev, _options):
     """Verifies the validity of the revision for this repository."""
     if not scm.SVN.IsValidRevision(url='%s@%s' % (self.url, rev)):
-      raise gclient_utils.Error(
+      raise depends_utils.Error(
         ( '%s isn\'t a valid revision. Please check that your safesync_url is\n'
           'correct.') % rev)
     return rev
@@ -1410,7 +1410,7 @@ class SVNWrapper(SCMWrapper):
   def _Run(self, args, options, **kwargs):
     """Runs a commands that goes to stdout."""
     kwargs.setdefault('cwd', self.checkout_path)
-    gclient_utils.CheckCallAndFilterAndHeader(['svn'] + args,
+    depends_utils.CheckCallAndFilterAndHeader(['svn'] + args,
         always=options.verbose, **kwargs)
 
   def Svnversion(self):

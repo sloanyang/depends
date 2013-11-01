@@ -26,7 +26,7 @@ RETRY_INITIAL_SLEEP = 0.5
 
 
 class Error(Exception):
-  """gclient exception class."""
+  """depends exception class."""
   def __init__(self, msg, *args, **kwargs):
     index = getattr(threading.currentThread(), 'index', 0)
     if index:
@@ -58,7 +58,7 @@ def MakeDateRevision(date):
 
 
 def SyntaxErrorToError(filename, e):
-  """Raises a gclient_utils.Error exception with the human readable message"""
+  """Raises a depends_utils.Error exception with the human readable message"""
   try:
     # Try to construct a human readable error message
     if filename:
@@ -490,8 +490,8 @@ def CheckCallAndFilter(args, stdout=None, filter_fn=None,
       rv, args, kwargs.get('cwd', None), None, None)
 
 
-def FindGclientRoot(from_dir, filename='.gclient'):
-  """Tries to find the gclient root."""
+def FindGclientRoot(from_dir, filename='.depends'):
+  """Tries to find the depends root."""
   real_from_dir = os.path.realpath(from_dir)
   path = real_from_dir
   while not os.path.exists(os.path.join(path, filename)):
@@ -505,8 +505,8 @@ def FindGclientRoot(from_dir, filename='.gclient'):
   if path != real_from_dir:
     entries_filename = os.path.join(path, filename + '_entries')
     if not os.path.exists(entries_filename):
-      # If .gclient_entries does not exist, a previous call to gclient sync
-      # might have failed. In that case, we cannot verify that the .gclient
+      # If .depends_entries does not exist, a previous call to depends sync
+      # might have failed. In that case, we cannot verify that the .depends
       # is the one we want to use. In order to not to cause too much trouble,
       # just issue a warning and return the path anyway.
       print >> sys.stderr, ("%s file in parent directory %s might not be the "
@@ -525,7 +525,7 @@ def FindGclientRoot(from_dir, filename='.gclient'):
       path_to_check = os.path.dirname(path_to_check)
     return None
 
-  logging.info('Found gclient root at ' + path)
+  logging.info('Found depends root at ' + path)
   return path
 
 
@@ -561,8 +561,8 @@ def FindFileUpwards(filename, path=None):
 
 
 def GetGClientRootAndEntries(path=None):
-  """Returns the gclient root and the dict of entries."""
-  config_file = '.gclient_entries'
+  """Returns the depends root and the dict of entries."""
+  config_file = '.depends_entries'
   root = FindFileUpwards(config_file, path)
   if not root:
     print "Can't find %s" % config_file
@@ -614,7 +614,7 @@ class ExecutionQueue(object):
   """Runs a set of WorkItem that have interdependencies and were WorkItem are
   added as they are processed.
 
-  In gclient's case, Dependencies sometime needs to be run out of order due to
+  In depends's case, Dependencies sometime needs to be run out of order due to
   From() keyword. This class manages that all the required dependencies are run
   before running each one.
 
@@ -627,7 +627,7 @@ class ExecutionQueue(object):
     self.ready_cond = threading.Condition()
     # Maximum number of concurrent tasks.
     self.jobs = jobs
-    # List of WorkItem, for gclient, these are Dependency instances.
+    # List of WorkItem, for depends, these are Dependency instances.
     self.queued = []
     # List of strings representing each Dependency.name that was run.
     self.ran = []
@@ -733,7 +733,7 @@ class ExecutionQueue(object):
           self.progress.update(1, t.item.name)
         if t.item.name in self.ran:
           raise Error(
-              'gclient is confused, "%s" is already in "%s"' % (
+              'depends is confused, "%s" is already in "%s"' % (
                 t.item.name, ', '.join(self.ran)))
         if not t.item.name in self.ran:
           self.ran.append(t.item.name)
